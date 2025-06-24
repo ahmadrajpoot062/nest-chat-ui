@@ -38,12 +38,24 @@ export default function Register() {
       form.append('username', data.username);
       form.append('password', data.password);
       if (data.avatar?.[0]) form.append('avatar', data.avatar[0]);
-      await api.post('/auth/register', form, { headers: { 'Content-Type': 'multipart/form-data' }});
+
+      await api.post('/auth/register', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
       toast.success('Registered!');
       nav('/login');
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      const status = err?.response?.status;
+      const message = err?.response?.data?.message;
+
+      if (status === 409 && message === 'Username exists') {
+        toast.error('Username is already taken. Please choose another.');
+      } else {
+        toast.error(message || 'Registration failed');
+      }
     }
+
   };
 
   return (
@@ -53,21 +65,21 @@ export default function Register() {
           <h2 className="text-3xl font-extrabold" style={{ color: Colors.light.textDark }}>Create an account</h2>
           <p className="mt-2 text-sm" style={{ color: Colors.light.textLight }}>Join our community today</p>
         </div>
-        
+
         <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-6">
           <div className="flex flex-col items-center space-y-4">
             <div className="relative">
               {preview ? (
-                <img 
-                  src={preview} 
-                  className="w-24 h-24 rounded-full object-cover border-4" 
+                <img
+                  src={preview}
+                  className="w-24 h-24 rounded-full object-cover border-4"
                   style={{ borderColor: Colors.light.primaryLight }}
-                  alt="avatar preview" 
+                  alt="avatar preview"
                 />
               ) : (
-                <div 
+                <div
                   className="w-24 h-24 rounded-full flex items-center justify-center border-4"
-                  style={{ 
+                  style={{
                     borderColor: Colors.light.primaryLight,
                     backgroundColor: Colors.light.input
                   }}
@@ -75,10 +87,10 @@ export default function Register() {
                   <span style={{ color: Colors.light.textLight }}>Avatar</span>
                 </div>
               )}
-              <label 
+              <label
                 htmlFor="avatar-upload"
                 className="absolute -bottom-2 -right-2 bg-white rounded-full p-2 shadow-md cursor-pointer hover:bg-opacity-90 transition-colors"
-                style={{ 
+                style={{
                   backgroundColor: Colors.light.primary,
                   color: '#FFFFFF'
                 }}
@@ -86,11 +98,11 @@ export default function Register() {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                 </svg>
-                <input 
+                <input
                   id="avatar-upload"
-                  type="file" 
-                  accept="image/*" 
-                  {...register('avatar')} 
+                  type="file"
+                  accept="image/*"
+                  {...register('avatar')}
                   className="hidden"
                 />
               </label>
@@ -151,7 +163,7 @@ export default function Register() {
             <Link
               to="/login"
               className="font-medium hover:underline transition-colors"
-              style={{ 
+              style={{
                 color: Colors.light.primary,
               }}
             >

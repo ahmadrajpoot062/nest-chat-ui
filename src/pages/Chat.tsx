@@ -6,6 +6,7 @@ import Colors from '../theme/colors';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import Avatar from '../components/Avatar';
 import { useUser } from '../context/UserContext';
+import { api } from '../services/api'; // ✅ ADDED
 
 type Message = {
   _id: string;
@@ -40,9 +41,23 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messageContainerRef = useRef<HTMLDivElement>(null);
-  const isAtBottomRef = useRef(true); // Add this ref to track scroll position
-  
+  const isAtBottomRef = useRef(true);
+
   const colors = isDark ? Colors.dark : Colors.light;
+
+  // ✅ Fetch chat history on room join
+  useEffect(() => {
+    const fetchMessages = async () => {
+      try {
+        const res = await api.get(`/chat/${room}`);
+        setMessages(res.data);
+        setTimeout(() => scrollToBottom(false), 100);
+      } catch (err) {
+        toast.error('Failed to load messages');
+      }
+    };
+    fetchMessages();
+  }, [room]);
 
   useEffect(() => {
     const s = io('http://localhost:3000', {
@@ -56,15 +71,13 @@ export default function ChatPage() {
 
     s.on('message', (msg: Message) => {
       const isOwnMessage = msg.sender === user?.username;
-      
+
       setMessages((prev) => [...prev, msg]);
-      
-      // Auto-scroll on own messages or if already at bottom when message was received
+
       if (isOwnMessage || isAtBottomRef.current) {
         setTimeout(() => scrollToBottom(), 100);
       } else {
-        // Increment new message count when user is scrolled up and receives a message
-        setNewMessageCount(prev => prev + 1);
+        setNewMessageCount((prev) => prev + 1);
       }
     });
 
@@ -93,33 +106,30 @@ export default function ChatPage() {
   }, [room, user]);
 
   useEffect(() => {
-    // Auto-scroll when joining a room (initial load)
     scrollToBottom(false);
     socket?.emit('seen', { room });
   }, []);
 
   const handleScroll = () => {
     if (!messageContainerRef.current) return;
-    
+
     const { scrollTop, scrollHeight, clientHeight } = messageContainerRef.current;
-    
-    // User is exactly at the bottom of the chat
+
     const atBottom = scrollHeight - scrollTop - clientHeight === 0;
-    
-    // Update both state and ref
+
     setIsAtBottom(atBottom);
-    isAtBottomRef.current = atBottom; // Update the ref with current position
+    isAtBottomRef.current = atBottom;
     setShowScrollButton(!atBottom);
   };
 
   const scrollToBottom = (smooth = true) => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ 
-        behavior: smooth ? 'smooth' : 'auto' 
+      messagesEndRef.current.scrollIntoView({
+        behavior: smooth ? 'smooth' : 'auto',
       });
       setIsAtBottom(true);
       setShowScrollButton(false);
-      setNewMessageCount(0); // Reset counter when scrolling to bottom
+      setNewMessageCount(0);
     }
   };
 
@@ -133,18 +143,26 @@ export default function ChatPage() {
     inputRef.current?.focus();
   };
 
-  const sendMessage = () => {
+  // ✅ Updated sendMessage to prevent double-saving
+  const sendMessage = async () => {
     if (!input.trim()) return;
 
-    socket?.emit('message', {
-      room,
-      content: input,
-      avatar: user?.avatar,
-    });
+    try {
+      // Send message through socket only
+      // The server will handle saving to DB
+      socket?.emit('message', {
+        room,
+        content: input,
+        avatar: user?.avatar, // Ensure we're sending the user's avatar
+      });
 
-    setInput('');
-    scrollToBottom(); // Always scroll to bottom when user sends a message
-    socket?.emit('typing', { room, typing: false });
+      setInput('');
+      scrollToBottom();
+      socket?.emit('typing', { room, typing: false });
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to send message');
+    }
   };
 
   const renderMessage = (m: Message) => {
@@ -158,7 +176,11 @@ export default function ChatPage() {
       <div key={m._id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-4`}>
         <div className={`flex gap-3 max-w-xs lg:max-w-md ${isMine ? 'flex-row-reverse' : ''}`}>
           <div className="flex-shrink-0">
-            <Avatar name={m.sender} src={m.avatar} size={40} />
+            <Avatar 
+              name={m.sender} 
+              src={m.avatar || (isMine ? user?.avatar : undefined)} 
+              size={40} 
+            />
           </div>
           <div
             className={`p-3 rounded-lg shadow-sm relative ${isMine ? 'rounded-tr-none' : 'rounded-tl-none'}`}
@@ -197,7 +219,7 @@ export default function ChatPage() {
     navigate('/login');
   };
 
-  return (
+ return (
     <div className="flex flex-col h-screen" style={{ backgroundColor: colors.background, color: colors.textDark }}>
       {/* Header */}
       <div className="flex justify-between items-center p-4 shadow-md" style={{ backgroundColor: colors.primary }}>
@@ -258,27 +280,37 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div
-        className="flex-1 overflow-y-auto p-4 relative"
+        className="flex-1 overflow-y-auto p-4 pb-0 relative"
         ref={messageContainerRef}
         onScroll={handleScroll}
       >
-        <div className="space-y-3">
+        <div className="space-y-3 mb-10">
           {messages.map(renderMessage)}
-          {typingUser && typingUser !== user?.username && (
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full w-fit" style={{ backgroundColor: colors.input }}>
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-              </div>
-              <span className="text-sm italic" style={{ color: colors.textLight }}>
-                {typingUser} is typing...
-              </span>
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Typing Indicator - Positioned as fixed element above input area */}
+      {typingUser && typingUser !== user?.username && (
+        <div 
+          className="flex items-center gap-2 px-4 py-2 rounded-full w-fit mx-4 mb-2 z-10"
+          style={{ 
+            position: 'absolute',
+            bottom: '70px',
+            left: '20px',
+            backgroundColor: colors.input
+          }}
+        >
+          <div className="flex space-x-1">
+            <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          </div>
+          <span className="text-sm italic" style={{ color: colors.textLight }}>
+            {typingUser} is typing...
+          </span>
+        </div>
+      )}
 
       {/* Message Input */}
       <div className="p-4 border-t relative" style={{ borderColor: colors.input }}>
@@ -366,3 +398,4 @@ export default function ChatPage() {
     </div>
   );
 }
+
